@@ -34,6 +34,7 @@ final class SessionController: ObservableObject {
     private var saved: SavedState
     private let web = WebBlocker()
     private let apps = AppBlocker()
+    private let net = NetBlocker()
     private let panel = CooldownPanel()
     private var timer: Timer?
     private var ticks = 0
@@ -79,12 +80,13 @@ final class SessionController: ObservableObject {
             self.apps.setExtra(self.closedBrowsers(denied: denied))
         }
 
-        if case .active(let id) = machine.state {
-            if config.profile(id) != nil {
-                startBlocking(id)
-            } else {
-                machine = SessionMachine()
-            }
+        net.listen()
+        if case .active(let id) = machine.state, config.profile(id) != nil {
+            startBlocking(id)
+        } else {
+            machine = machine.state == .idle ? machine : SessionMachine()
+            // A proxy setting left behind by a copy that was killed is removed.
+            net.stop()
         }
         state = machine.state
         save()
@@ -103,6 +105,12 @@ final class SessionController: ObservableObject {
         #endif
     }
 
+    /// Called when the process is about to end, for any reason it can see
+    /// coming. Blocking resumes from the saved session at the next start.
+    func prepareToExit() {
+        net.stopBeforeExit()
+    }
+
     // MARK: What macOS reports
 
     /// Called by the Focus Filter when a connected Focus goes on (with its
@@ -115,6 +123,11 @@ final class SessionController: ObservableObject {
     }
 
     private func poll() {
+        #if DEBUG
+        // A test copy shares the installed copy's identity, so macOS would
+        // answer it with the real Focus. A scripted run turns the question off.
+        if ProcessInfo.processInfo.environment["FOCUSGUARD_NO_POLL"] == "1" { return }
+        #endif
         guard !pollInFlight else { return }
         pollInFlight = true
         let asked = epoch
@@ -182,6 +195,7 @@ final class SessionController: ObservableObject {
         send(.tick)
         if case .coolingDown = state { now = Date() }
         if ticks % 3 == 0 { poll() }
+        if ticks % 5 == 0 { net.verify() }
         if ticks % 300 == 0 { refreshShortcuts() }
     }
 
@@ -206,6 +220,7 @@ final class SessionController: ObservableObject {
         case .stopBlocking:
             web.stop()
             apps.stop()
+            net.stop()
             deniedBrowsers = []
         case .showCooldown(let id, let until):
             panel.show(profileName: config.profile(id)?.name ?? "Focus", until: until) { [weak self] in
@@ -226,6 +241,7 @@ final class SessionController: ObservableObject {
         guard let profile = config.profile(id) else { return }
         refreshShortcuts()
         web.start(policy: profile.sitePolicy)
+        net.start(policy: profile.sitePolicy)
         apps.start(policy: profile.appPolicy(exempt: AppBlocker.exempt), extra: closedBrowsers(denied: []))
     }
 

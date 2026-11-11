@@ -139,11 +139,11 @@ struct ProfileEditor: View {
     private var siteFooter: String {
         switch profile.siteMode {
         case .block:
-            return "A site covers its subdomains. Add a path, like linkedin.com/feed, to block one part of a site and leave the rest."
+            return "A site covers its subdomains, and is also refused inside other apps' built-in browsers. Add a path, like linkedin.com/feed, to block one part of a site and leave the rest. A path rule works in browsers only."
         case .allow:
             return profile.sites.isEmpty
                 ? "With nothing on this list, every website is blocked while the Focus is on."
-                : "Every website not on this list is blocked while the Focus is on, including sign-in pages on other domains."
+                : "Every website not on this list is blocked while the Focus is on, including sign-in pages on other domains. This reaches browsers only. To keep an app's built-in browser shut, block the app below."
         }
     }
 

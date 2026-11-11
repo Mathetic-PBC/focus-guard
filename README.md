@@ -39,6 +39,11 @@ A shield appears in the menu bar and the settings window opens.
    each browser. macOS asks once per browser.
 4. **Switch the Focus on once.** The profile shows "Switched on by a Focus"
    when the connection works.
+5. **Optional: cover WebKit apps.** Built-in browsers in Chromium-based apps
+   (Claude, Engelbart, Cursor and other Electron apps) are covered with no
+   setup. For WebKit-based apps (Codex, and web views in native Mac apps),
+   click **Set Up…** under "Built-in browsers in other apps" and enter your
+   password once.
 
 Rules can't be edited while a session is running.
 
@@ -66,6 +71,19 @@ browser, over AppleScript, for the address of the tab showing in each window. Ot
 running browsers are asked every three seconds, and background tabs twice a
 minute. A tab on a blocked address is sent to a local page that says so.
 
+**Built-in browsers in other apps.** An app with a web view of its own has no
+tabs to read. So while a session is on, macOS is also pointed at a proxy
+auto-config file served by Focus Guard. Every request from every app that
+follows the system proxy settings is run through it. Requests for a blocked
+host go to a listener in Focus Guard, which opens the tunnel and drops it;
+everything else connects as it always does. Only whole hosts from a block
+list are enforced this way: an encrypted request doesn't show its path, and
+an allow list applied to the whole Mac would cut off every app's own traffic.
+
+Chromium gives up when the tunnel drops. Apple's networking retries directly,
+unless the network service has direct fallback switched off, which is the one
+setting that needs a password and is changed only from the Setup pane.
+
 **Apps.** An app on a block list is asked to quit when the session starts and
 each time it is opened. One opened during a session is forced if it doesn't
 go. One that was already open is hidden instead, since it may be waiting on a
@@ -88,8 +106,19 @@ is saved to disk on every change.
   Firefox, Arc, Zen, DuckDuckGo, Orion and other browsers that don't report
   their tabs are closed while a profile with website rules is on. A browser
   missing from both lists in `App/Sources/Browsers.swift` is not handled.
-- **It doesn't block the network.** Only browser tabs are checked. A blocked
-  site's desktop app has to be on the app list as well.
+- **Inside other apps, only whole hosts on a block list are refused.** Path
+  rules and allow lists work in browsers only. An app that ignores the system
+  proxy settings is not covered, and neither is a site's own desktop app,
+  which has to be on the app list.
+- **With WebKit coverage on, the proxy setting must not outlive the app.**
+  Focus Guard takes the setting down when it is asked to stop, and macOS
+  restarts it within a second if it is killed. If it is ever gone for good
+  during a session, Safari and other WebKit apps show every site as offline
+  until Automatic Proxy Configuration is switched off under System Settings ›
+  Network › Details › Proxies. `make uninstall` does that for you.
+- **A proxy file you already use is left alone.** If a network service has its
+  own auto-config address, Focus Guard doesn't replace it, and the block
+  inside other apps isn't in force on that service.
 - **It can be removed.** Deleting the filter in System Settings, or unloading
   the background item from Terminal, ends blocking with no countdown. The aim
   is to make stopping a deliberate act, not an impossible one.

@@ -31,11 +31,13 @@ install: build
 	rm -rf "$(DEST)"
 	ditto "$(APP)" "$(DEST)"
 	-pkill -x FocusGuard
-	open "$(DEST)"
+	sleep 2; pgrep -x FocusGuard >/dev/null || open "$(DEST)"
 
 uninstall:
 	-launchctl bootout gui/$$(id -u)/com.mathetic.FocusGuard.agent
 	-pkill -x FocusGuard
+	-networksetup -listallnetworkservices | tail -n +2 | grep -v '^\*' | while read -r s; do \
+		networksetup -getautoproxyurl "$$s" | grep -q '127.0.0.1:47113' && networksetup -setautoproxystate "$$s" off; done
 	rm -rf "$(DEST)"
 
 clean:

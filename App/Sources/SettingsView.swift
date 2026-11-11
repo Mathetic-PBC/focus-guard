@@ -135,6 +135,8 @@ struct SetupPane: View {
     @StateObject private var access = BrowserAccess()
     @State private var backgroundError: String?
     @State private var backgroundOn = Background.isEnabled
+    @State private var fallbackOff = DirectFallback.isOff
+    @State private var changingFallback = false
     let onAddProfile: () -> Void
 
     var body: some View {
@@ -204,6 +206,31 @@ struct SetupPane: View {
                 Text("With this off, nothing restarts Focus Guard if it is quit or force-quit, and blocking ends with it.")
             }
 
+            Section {
+                LabeledContent {
+                    if fallbackOff {
+                        Button("Undo…") { setFallback(off: false) }.disabled(changingFallback || session.isLocked)
+                    } else {
+                        Button("Set Up…") { setFallback(off: true) }.disabled(changingFallback)
+                    }
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label("Apps built on Chromium", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                        if fallbackOff {
+                            Label("Apps built on WebKit", systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        } else {
+                            Label("Apps built on WebKit need one more setting", systemImage: "circle.dashed")
+                        }
+                    }
+                }
+            } header: {
+                Text("4. Built-in browsers in other apps")
+            } footer: {
+                Text("While a profile is on, the sites on its block list are refused across the Mac, which reaches the browsers built into apps like Claude, Codex and Engelbart. Apps built on WebKit only respect that once macOS is told not to retry a refused connection directly. Changing that setting takes your password, once. With it on, if Focus Guard is ever missing during a session, Safari and other WebKit apps show every site as offline: switch off Automatic Proxy Configuration under Network › Details › Proxies to recover. Path rules and allow lists don't apply inside other apps.")
+            }
+
             Section("Record") {
                 LabeledContent("Log of sessions and blocked pages") {
                     Button("Show in Finder") {
@@ -215,6 +242,18 @@ struct SetupPane: View {
         .formStyle(.grouped)
         .onAppear { access.startWatching() }
         .onDisappear { access.stopWatching() }
+    }
+
+    private func setFallback(off: Bool) {
+        changingFallback = true
+        DispatchQueue.global(qos: .userInitiated).async {
+            _ = DirectFallback.set(off: off)
+            let now = DirectFallback.isOff
+            DispatchQueue.main.async {
+                fallbackOff = now
+                changingFallback = false
+            }
+        }
     }
 
     private func setBackground(_ on: Bool) {

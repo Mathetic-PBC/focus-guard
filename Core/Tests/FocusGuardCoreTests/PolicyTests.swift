@@ -1,3 +1,4 @@
+import JavaScriptCore
 import XCTest
 @testable import FocusGuardCore
 
@@ -95,5 +96,35 @@ final class PolicyTests: XCTestCase {
         try ConfigStore.save(config, to: url)
         XCTAssertEqual(ConfigStore.load(from: url), config)
         XCTAssertEqual(ConfigStore.load(from: url.appendingPathExtension("missing")), Config())
+    }
+
+    func testNetworkHostsAreWholeHostsFromABlockList() {
+        let block = SitePolicy(mode: .block, entries: ["x.com", "linkedin.com/feed", "gmail.com"])
+        XCTAssertEqual(block.networkHosts, ["x.com", "twitter.com", "gmail.com", "mail.google.com"])
+        XCTAssertEqual(SitePolicy(mode: .allow, entries: ["arxiv.org"]).networkHosts, [])
+    }
+
+    /// Runs the generated file the way a browser would.
+    func testProxyAutoConfigRefusesListedHostsOnly() throws {
+        let source = ProxyAutoConfig.source(blocking: ["x.com", "mail.google.com"], via: "127.0.0.1:47113")
+        let context = try XCTUnwrap(JSContext())
+        context.evaluateScript(source)
+        func route(_ host: String) -> String {
+            context.evaluateScript("FindProxyForURL('https://\(host)/', '\(host)')").toString()
+        }
+        XCTAssertEqual(route("x.com"), "PROXY 127.0.0.1:47113")
+        XCTAssertEqual(route("www.x.com"), "PROXY 127.0.0.1:47113")
+        XCTAssertEqual(route("API.X.COM"), "PROXY 127.0.0.1:47113")
+        XCTAssertEqual(route("mail.google.com"), "PROXY 127.0.0.1:47113")
+        XCTAssertEqual(route("notx.com"), "DIRECT")
+        XCTAssertEqual(route("x.com.evil.example"), "DIRECT")
+        XCTAssertEqual(route("docs.google.com"), "DIRECT")
+        XCTAssertEqual(route("com"), "DIRECT")
+    }
+
+    func testProxyAutoConfigWithNothingListedLetsEverythingThrough() throws {
+        let context = try XCTUnwrap(JSContext())
+        context.evaluateScript(ProxyAutoConfig.source(blocking: [], via: "127.0.0.1:47113"))
+        XCTAssertEqual(context.evaluateScript("FindProxyForURL('https://x.com/', 'x.com')").toString(), "DIRECT")
     }
 }

@@ -109,3 +109,40 @@ public struct SitePolicy: Equatable, Sendable {
             .compactMap { SiteRule(String($0))?.text }
     }
 }
+
+extension SitePolicy {
+    /// The part of a block list that can be enforced below the browser, by
+    /// refusing connections: whole hosts. A rule with a path can't be, because
+    /// an encrypted request shows only the host it is going to. An allow list
+    /// can't be either, since refusing every other host would cut off every
+    /// app on the Mac, not just the pages in them.
+    public var networkHosts: [String] {
+        guard mode == .block else { return [] }
+        return rules.filter { $0.path.isEmpty }.map(\.host)
+    }
+}
+
+/// The proxy auto-config file handed to macOS during a session. Every app that
+/// follows the system proxy settings runs it for each request, which is how a
+/// block reaches web views inside apps that are not browsers.
+public enum ProxyAutoConfig {
+    /// Requests for a listed host, or any subdomain of one, are sent to
+    /// `proxy`, which refuses them. Everything else goes out as it would have.
+    public static func source(blocking hosts: [String], via proxy: String) -> String {
+        let list = hosts.map { "\"\($0)\"" }.joined(separator: ",")
+        return """
+            var blocked = [\(list)];
+            function FindProxyForURL(url, host) {
+              host = String(host).toLowerCase();
+              for (var i = 0; i < blocked.length; i++) {
+                var name = blocked[i];
+                if (host === name) return "PROXY \(proxy)";
+                var cut = host.length - name.length - 1;
+                if (cut >= 0 && host.charAt(cut) === "." && host.indexOf(name, cut + 1) === cut + 1) return "PROXY \(proxy)";
+              }
+              return "DIRECT";
+            }
+
+            """
+    }
+}

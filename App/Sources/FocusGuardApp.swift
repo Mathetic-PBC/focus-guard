@@ -19,6 +19,7 @@ struct FocusGuardApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private static var settingsWindow: NSWindow?
     private var poweringOff = false
+    private var terminateSource: DispatchSourceSignal?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // A run pointed at its own folder is a test. It stays out of the way
@@ -38,6 +39,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let session = SessionController.shared
         session.start()
+
+        // A kill request ends the process without the usual goodbye. The
+        // system proxy setting must not outlive the listener it points at, so
+        // it is taken down first. macOS then restarts the app, which puts the
+        // setting back if a session is running.
+        signal(SIGTERM, SIG_IGN)
+        let terminate = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        terminate.setEventHandler {
+            Log.write("stop requested; releasing the proxy setting")
+            SessionController.shared.prepareToExit()
+            exit(0)
+        }
+        terminate.resume()
+        terminateSource = terminate
 
         // First run from an installed copy: ask macOS to keep the app alive.
         // If that works, macOS starts its own copy and this one steps aside.
@@ -71,6 +86,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return .terminateCancel
         }
         return .terminateNow
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        SessionController.shared.prepareToExit()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
