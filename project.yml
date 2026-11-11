@@ -1,0 +1,52 @@
+name: FocusGuard
+options:
+  bundleIdPrefix: com.mathetic
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+packages:
+  FocusGuardCore:
+    path: Core
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  FocusGuard:
+    type: application
+    platform: macOS
+    sources:
+      - path: App/Sources
+      - path: App/Resources/com.mathetic.FocusGuard.agent.plist
+        buildPhase:
+          copyFiles:
+            destination: wrapper
+            subpath: Contents/Library/LaunchAgents
+    dependencies:
+      - package: FocusGuardCore
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Focus Guard
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSUIElement: true
+        LSApplicationCategoryType: public.app-category.productivity
+        NSAppleEventsUsageDescription: Focus Guard reads which pages your browser is showing so it can replace the ones you blocked while a Focus is on.
+        NSHumanReadableCopyright: Copyright © 2026 Mathetic PBC
+    entitlements:
+      path: App/FocusGuard.entitlements
+      properties:
+        com.apple.security.automation.apple-events: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mathetic.FocusGuard
+        PRODUCT_NAME: FocusGuard
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+        GENERATE_INFOPLIST_FILE: NO
+        COMBINE_HIDPI_IMAGES: YES
+        ENABLE_APP_INTENTS_METADATA_GENERATION: YES
