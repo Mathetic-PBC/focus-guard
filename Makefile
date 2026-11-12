@@ -13,11 +13,13 @@ DEST := /Applications/FocusGuard.app
 XCODEBUILD := xcodebuild -project FocusGuard.xcodeproj -scheme FocusGuard -derivedDataPath $(BUILD) \
 	CODE_SIGN_IDENTITY="$(IDENTITY)" -quiet
 
-# xcodebuild registers each product with macOS as an installed app. Left
-# registered, a build-folder copy can be the one macOS starts for a
-# focusguard:// link, instead of the copy in /Applications.
+# xcodebuild registers each product with macOS as an installed app. A second
+# registered copy with the installed app's identifier is one macOS may start
+# in its place: for a focusguard:// link, or as the copy it keeps alive. So
+# the release product is unregistered and removed once it has been installed.
+# (Debug builds carry their own identifier and can stay.) The unregister is
+# given ten seconds: lsregister can hang on a path that is already gone.
 LSREGISTER := /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
-UNREGISTER = -$(LSREGISTER) -u "$(CURDIR)/$(APP)" "$(CURDIR)/$(DEBUG_APP)" 2>/dev/null
 
 .PHONY: project build debug test install uninstall clean
 
@@ -26,11 +28,9 @@ project:
 
 build: project
 	$(XCODEBUILD) -configuration Release build
-	$(UNREGISTER)
 
 debug: project
 	$(XCODEBUILD) -configuration Debug build
-	$(UNREGISTER)
 
 test:
 	cd Core && swift test
@@ -38,8 +38,15 @@ test:
 install: build
 	rm -rf "$(DEST)"
 	ditto "$(APP)" "$(DEST)"
+	-perl -e 'alarm 10; exec @ARGV' $(LSREGISTER) -u "$(CURDIR)/$(APP)" 2>/dev/null
+	rm -rf "$(APP)"
 	-pkill -x FocusGuard
 	sleep 2; pgrep -x FocusGuard >/dev/null || open "$(DEST)"
+	# Replacing the app makes macOS drop its Focus filter from the index, and
+	# until the installed copy is registered again macOS answers "no Focus"
+	# to it. Registering only takes once the new copy is running.
+	sleep 2
+	-perl -e 'alarm 15; exec @ARGV' $(LSREGISTER) -f "$(DEST)" 2>/dev/null
 
 uninstall:
 	-launchctl bootout gui/$$(id -u)/com.mathetic.FocusGuard.agent

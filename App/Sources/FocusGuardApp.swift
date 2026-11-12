@@ -32,6 +32,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if DEBUG
+        // A debug build takes scripted commands that start and end sessions.
+        // It only ever runs against a folder of its own, never the real rules.
+        guard Paths.isOverridden else {
+            NSLog("Focus Guard debug builds need FOCUSGUARD_HOME set. Exiting.")
+            exit(0)
+        }
+        #endif
         // A run pointed at its own folder is a test. It stays out of the way
         // of the installed copy, and the installed copy out of its.
         if !Paths.isOverridden {
@@ -99,6 +107,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 try Background.enable()
             } catch {
                 Log.write("background: could not register: \(error)")
+            }
+        }
+
+        // When the background item is on, the copy macOS keeps alive takes over
+        // from this one within a second or two of either starting. If this
+        // copy is still here after ten, macOS isn't running one.
+        if Background.isInstalledCopy, !Paths.isOverridden, !Background.isAgentProcess, !Background.isTakeover,
+           Background.isEnabled {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+                if Background.isEnabled { Background.repair() }
             }
         }
 

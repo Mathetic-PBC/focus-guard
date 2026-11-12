@@ -4,6 +4,8 @@ import XCTest
 final class DraftTests: XCTestCase {
     let t0 = Date(timeIntervalSince1970: 1_000_000)
 
+    // MARK: Tags
+
     func testMentionsAreFoundInOrderAndOnce() {
         XCTAssertEqual(
             TweetText.mentions(in: "@karpathy this with @dwarkesh_sp, and again @Karpathy."),
@@ -20,6 +22,10 @@ final class DraftTests: XCTestCase {
         XCTAssertEqual(TweetText.mentions(in: "@abcdefghijklmno"), ["abcdefghijklmno"])
     }
 
+    func testAtSignInsideALinkIsNotATag() {
+        XCTAssertEqual(TweetText.mentions(in: "see https://medium.com/@someone/post and @real"), ["real"])
+    }
+
     func testTrailingMentionIsThePartBeingTyped() {
         XCTAssertEqual(TweetText.trailingMention(in: "thanks @"), "")
         XCTAssertEqual(TweetText.trailingMention(in: "thanks @dwa"), "dwa")
@@ -29,10 +35,45 @@ final class DraftTests: XCTestCase {
         XCTAssertNil(TweetText.trailingMention(in: "no tag here"))
     }
 
+    func testMentionAtTheCaretCoversTheWholeWord() throws {
+        // Caret after "@dwa" in the middle of the text, with "rk" still to its right.
+        let text = "hi @dwark and more"
+        let typed = try XCTUnwrap(TweetText.mentionBeingTyped(in: text, caret: 7))
+        XCTAssertEqual(typed.partial, "dwa")
+        XCTAssertEqual(typed.location, 3)
+        XCTAssertEqual(typed.length, 6)
+        XCTAssertNil(TweetText.mentionBeingTyped(in: text, caret: 2))
+        XCTAssertNil(TweetText.mentionBeingTyped(in: text, caret: 12))
+    }
+
+    func testMentionPositionsCountEmojiAsATextViewDoes() throws {
+        let text = "👍 @ka"
+        let typed = try XCTUnwrap(TweetText.mentionBeingTyped(in: text, caret: (text as NSString).length))
+        XCTAssertEqual(typed.location, 3)
+        XCTAssertEqual(typed.partial, "ka")
+    }
+
     func testCompletingReplacesOnlyThePartBeingTyped() {
         XCTAssertEqual(TweetText.completing("thanks @dwa", with: "dwarkesh_sp"), "thanks @dwarkesh_sp ")
         XCTAssertEqual(TweetText.completing("thanks @", with: "karpathy"), "thanks @karpathy ")
         XCTAssertEqual(TweetText.completing("no tag", with: "karpathy"), "no tag")
+    }
+
+    // MARK: Links and length
+
+    func testLinksAreFoundOnce() {
+        XCTAssertEqual(
+            TweetText.links(in: "a https://example.com/x b http://example.org. again https://example.com/x"),
+            ["https://example.com/x", "http://example.org"])
+        XCTAssertEqual(TweetText.links(in: "mailto:me@example.com is not a web link"), [])
+    }
+
+    func testSpansGiveRangesATextViewCanColour() {
+        let text = "hey @karpathy read https://example.com now"
+        let spans = TweetText.spans(in: text)
+        XCTAssertEqual(spans.map(\.kind), [.mention, .link])
+        XCTAssertEqual((text as NSString).substring(with: NSRange(location: spans[0].location, length: spans[0].length)), "@karpathy")
+        XCTAssertEqual((text as NSString).substring(with: NSRange(location: spans[1].location, length: spans[1].length)), "https://example.com")
     }
 
     func testLengthCountsLinksAsTwentyThreeAndEmojiAsTwo() {
@@ -44,7 +85,7 @@ final class DraftTests: XCTestCase {
     }
 
     func testComposeURLCarriesTheTextIntact() throws {
-        let text = "1 + 1 = 2 & that's it #math @karpathy\nline two"
+        let text = "1 + 1 = 2 & that's it #math @karpathy\nline two https://example.com/?a=1&b=2"
         let url = try XCTUnwrap(TweetText.composeURL(for: text))
         XCTAssertEqual(url.host, "x.com")
         XCTAssertEqual(url.path, "/intent/post")
@@ -56,7 +97,9 @@ final class DraftTests: XCTestCase {
         XCTAssertEqual(url.absoluteString.filter { $0 == "&" }.count, 0)
     }
 
-    func testSavingKeepsNewestFirstAndIgnoresBlankText() {
+    // MARK: Drafts
+
+    func testSavingKeepsNewestFirstAndIgnoresAnEmptyDraft() {
         var book = DraftBook()
         XCTAssertNil(book.save(text: "  \n ", now: t0))
         book.save(text: "first", now: t0)
@@ -64,13 +107,28 @@ final class DraftTests: XCTestCase {
         XCTAssertEqual(book.drafts.map(\.text), ["second", "first"])
     }
 
-    func testEditingReplacesTextAndClearsOpened() throws {
+    func testADraftCanBeImagesAlone() throws {
         var book = DraftBook()
-        let draft = try XCTUnwrap(book.save(text: "frist", now: t0))
+        let draft = try XCTUnwrap(book.save(text: "", images: ["a.png"], now: t0))
+        XCTAssertEqual(draft.images, ["a.png"])
+        XCTAssertEqual(draft.text, "")
+    }
+
+    func testNoMoreImagesAreKeptThanXTakes() throws {
+        var book = DraftBook()
+        let draft = try XCTUnwrap(book.save(text: "x", images: ["1", "2", "3", "4", "5"], now: t0))
+        XCTAssertEqual(draft.images, ["1", "2", "3", "4"])
+        XCTAssertEqual(book.imagesInUse, ["1", "2", "3", "4"])
+    }
+
+    func testEditingReplacesTextAndImagesAndClearsOpened() throws {
+        var book = DraftBook()
+        let draft = try XCTUnwrap(book.save(text: "frist", images: ["a.png"], now: t0))
         book.markOpened(draft.id, now: t0)
-        book.save(text: "first", replacing: draft.id, now: t0.addingTimeInterval(5))
+        book.save(text: "first", images: ["b.png"], replacing: draft.id, now: t0.addingTimeInterval(5))
         XCTAssertEqual(book.drafts.count, 1)
         XCTAssertEqual(book.drafts[0].text, "first")
+        XCTAssertEqual(book.drafts[0].images, ["b.png"])
         XCTAssertNil(book.drafts[0].openedAt)
         XCTAssertEqual(book.drafts[0].createdAt, t0)
     }
@@ -87,30 +145,129 @@ final class DraftTests: XCTestCase {
         XCTAssertEqual(book.drafts.map(\.text), ["c", "b", "a"])
     }
 
-    func testHandlesAreRememberedMostRecentFirst() {
-        var book = DraftBook()
-        book.save(text: "@karpathy @dwarkesh_sp", now: t0)
-        book.save(text: "again @Karpathy and @tylercowen", now: t0)
-        XCTAssertEqual(book.handles, ["Karpathy", "tylercowen", "dwarkesh_sp"])
-    }
-
-    func testSuggestionsMatchByPrefixWhateverTheCase() {
-        var book = DraftBook()
-        book.save(text: "@karpathy @dwarkesh_sp @DarioAmodei", now: t0)
-        XCTAssertEqual(book.suggestions(for: "d"), ["dwarkesh_sp", "DarioAmodei"])
-        XCTAssertEqual(book.suggestions(for: "DA"), ["DarioAmodei"])
-        XCTAssertEqual(book.suggestions(for: ""), ["karpathy", "dwarkesh_sp", "DarioAmodei"])
-        XCTAssertEqual(book.suggestions(for: "karpathy"), [])
-        XCTAssertEqual(book.suggestions(for: "zz"), [])
-    }
-
     func testDraftsRoundTripThroughDisk() throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString).appendingPathComponent("drafts.json")
         var book = DraftBook()
-        book.save(text: "hello @karpathy", now: t0)
+        book.save(text: "hello @karpathy", images: ["a.png"], now: t0)
+        book.merge([Person(handle: "karpathy", name: "Andrej Karpathy", visits: 9)])
         try DraftStore.save(book, to: url)
         XCTAssertEqual(DraftStore.load(from: url), book)
         XCTAssertEqual(DraftStore.load(from: url.appendingPathExtension("missing")), DraftBook())
+    }
+
+    func testAFileFromBeforeImagesAndNamesStillLoads() throws {
+        let old = #"{"drafts":[{"id":"D1","text":"hi @a","createdAt":1000}],"handles":["karpathy","a"]}"#
+        let book = try JSONDecoder().decode(DraftBook.self, from: Data(old.utf8))
+        XCTAssertEqual(book.drafts.first?.images, [])
+        XCTAssertEqual(book.people.map(\.handle), ["karpathy", "a"])
+    }
+
+    // MARK: People
+
+    func people() -> DraftBook {
+        var book = DraftBook()
+        book.merge([
+            Person(handle: "karpathy", name: "Andrej Karpathy", visits: 40),
+            Person(handle: "dwarkesh_sp", name: "Dwarkesh Patel", visits: 25),
+            Person(handle: "DarioAmodei", name: "Dario Amodei", visits: 12),
+            Person(handle: "tylercowen", name: "Tyler Cowen", visits: 30),
+            Person(handle: "patrickc", name: "Patrick Collison", visits: 8),
+        ])
+        return book
+    }
+
+    func testSuggestionsMatchTheStartOfTheHandle() {
+        XCTAssertEqual(people().suggestions(for: "d").map(\.handle), ["dwarkesh_sp", "DarioAmodei"])
+        XCTAssertEqual(people().suggestions(for: "DA").map(\.handle), ["DarioAmodei"])
+        XCTAssertEqual(people().suggestions(for: "zz").map(\.handle), [])
+    }
+
+    func testSuggestionsMatchAnyWordOfTheNameLikeXDoes() {
+        // "patel" is nobody's handle. It is Dwarkesh's surname.
+        XCTAssertEqual(people().suggestions(for: "patel").map(\.handle), ["dwarkesh_sp"])
+        XCTAssertEqual(people().suggestions(for: "andrej").map(\.handle), ["karpathy"])
+        // A handle match comes before a name match: "pat" starts patrickc and Patel.
+        XCTAssertEqual(people().suggestions(for: "pat").map(\.handle), ["patrickc", "dwarkesh_sp"])
+        // A name typed without its space still finds the person.
+        XCTAssertEqual(people().suggestions(for: "tylerc").map(\.handle), ["tylercowen"])
+    }
+
+    func testBareAtOffersTheMostLikelyPeople() {
+        XCTAssertEqual(people().suggestions(for: "", limit: 3).map(\.handle), ["karpathy", "tylercowen", "dwarkesh_sp"])
+    }
+
+    func testSomeoneTaggedHereBeforeLeads() {
+        var book = people()
+        book.save(text: "thanks @patrickc", now: t0)
+        XCTAssertEqual(book.suggestions(for: "", limit: 2).map(\.handle), ["patrickc", "karpathy"])
+        XCTAssertEqual(book.suggestions(for: "pat").map(\.handle), ["patrickc", "dwarkesh_sp"])
+    }
+
+    func testAFinishedHandleShowsWhoItIs() {
+        let found = people().suggestions(for: "karpathy")
+        XCTAssertEqual(found.first?.name, "Andrej Karpathy")
+    }
+
+    func testAnUnknownHandleTypedHereIsRemembered() {
+        var book = people()
+        book.save(text: "hi @someone_new", now: t0)
+        XCTAssertEqual(book.suggestions(for: "someone").map(\.handle), ["someone_new"])
+    }
+
+    func testImportKeepsWhatWasKnownAndCountsOnlyNewPeople() {
+        var book = DraftBook()
+        book.save(text: "@Karpathy", now: t0)
+        let added = book.merge([
+            Person(handle: "karpathy", name: "Andrej Karpathy", visits: 40),
+            Person(handle: "tylercowen", name: "Tyler Cowen", visits: 30),
+        ])
+        XCTAssertEqual(added, 1)
+        XCTAssertEqual(book.people.count, 2)
+        let karpathy = book.people.first { $0.id == "karpathy" }
+        XCTAssertEqual(karpathy?.name, "Andrej Karpathy")
+        XCTAssertEqual(karpathy?.visits, 40)
+        XCTAssertEqual(karpathy?.lastUsed, t0)
+        // Importing again changes nothing.
+        XCTAssertEqual(book.merge([Person(handle: "tylercowen", name: "Tyler Cowen", visits: 30)]), 0)
+    }
+
+    // MARK: Reading profiles out of browser history
+
+    func testAProfilePageGivesHandleAndName() {
+        let person = XProfilePage.person(url: "https://x.com/karpathy", title: "Andrej Karpathy (@karpathy) / X", visits: 7)
+        XCTAssertEqual(person, Person(handle: "karpathy", name: "Andrej Karpathy", visits: 7))
+    }
+
+    func testOlderAndNoisierTitlesStillRead() {
+        XCTAssertEqual(
+            XProfilePage.person(url: "https://twitter.com/tylercowen", title: "(3) Tyler Cowen (@tylercowen) / Twitter", visits: 2)?.name,
+            "Tyler Cowen")
+        XCTAssertEqual(
+            XProfilePage.person(url: "https://www.x.com/DarioAmodei?lang=en", title: "(20+) Dario Amodei (@DarioAmodei) / X", visits: 1)?.name,
+            "Dario Amodei")
+        XCTAssertEqual(
+            XProfilePage.person(url: "https://x.com/someone", title: "Name (with) brackets (@someone) / X", visits: 1)?.name,
+            "Name (with) brackets")
+    }
+
+    func testPagesThatAreNotProfilesAreSkipped() {
+        XCTAssertNil(XProfilePage.person(url: "https://x.com/home", title: "Home / X", visits: 900))
+        XCTAssertNil(XProfilePage.person(url: "https://x.com/karpathy/status/123", title: "Andrej Karpathy on X: \"...\" / X", visits: 3))
+        XCTAssertNil(XProfilePage.person(url: "https://x.com/search?q=karpathy", title: "karpathy - Search / X", visits: 3))
+        XCTAssertNil(XProfilePage.person(url: "https://x.com/karpathy", title: "X", visits: 3))
+        XCTAssertNil(XProfilePage.person(url: "https://example.com/karpathy", title: "Andrej Karpathy (@karpathy) / X", visits: 3))
+        XCTAssertNil(XProfilePage.person(url: "https://x.com/this_handle_is_too_long", title: "A (@this_handle_is_too_long) / X", visits: 1))
+    }
+
+    func testVisitsToTheSameProfileAddUp() {
+        let people = XProfilePage.people(from: [
+            (url: "https://x.com/karpathy", title: "Andrej Karpathy (@karpathy) / X", visits: 5),
+            (url: "https://twitter.com/karpathy", title: "Andrej Karpathy (@karpathy) / Twitter", visits: 4),
+            (url: "https://x.com/tylercowen", title: "Tyler Cowen (@tylercowen) / X", visits: 20),
+            (url: "https://x.com/home", title: "Home / X", visits: 999),
+        ])
+        XCTAssertEqual(people.map(\.handle), ["tylercowen", "karpathy"])
+        XCTAssertEqual(people.map(\.visits), [20, 9])
     }
 }

@@ -68,8 +68,9 @@ click it off, and switches it off itself when the countdown ends.
 **Knowing when a Focus is on.** The app declares a Focus Filter, the interface
 macOS gives apps for reacting to Focus changes. macOS calls it with the chosen
 profile when the Focus goes on, and again when it goes off. The app also asks
-macOS for the current filter every three seconds, to catch a change it was not
-running for.
+macOS for the current filter, every three seconds when idle and every second
+during a session, to catch a change it was not told about. During a session a
+single "no Focus" answer is not acted on; two in a row are.
 
 **Websites.** Every three quarters of a second the app asks the frontmost
 browser, over AppleScript, for the address of the tab showing in each window. Other
@@ -90,13 +91,28 @@ unless the network service has direct fallback switched off, which is the one
 setting that needs a password and is changed only from the Setup pane.
 
 **Drafts for X.** The page a blocked X tab is sent to links to a drafts
-window, which is also in the menu bar menu. Drafts are a file on this Mac.
-Typing `@` offers the handles used in earlier drafts; X can't be asked who
-exists while it is blocked. Post is disabled for as long as the rules in force
-block x.com. When that stops being true, the window opens by itself with the
-drafts first. Post opens X's own compose page with the text filled in, in your
-browser, and the draft stays until you mark it posted. Focus Guard never sends
-anything to X and holds no X credentials.
+window, which is also in the menu bar menu. Drafts are a file on this Mac,
+with their images in a folder beside it. Up to four images can be attached
+by choosing, dropping or pasting them. Links and tags are coloured as they
+are typed, and a link counts as 23 characters, as it does on X.
+
+Typing `@` brings up a list of people, name over handle, matched against the
+start of the handle or of any word of the name. The arrow keys move through
+it and Return or Tab takes the highlighted one. The list is searched on this
+Mac, because X can't be asked who exists while it is blocked, and its user
+search is not open to apps without a paid API key. It holds everyone tagged
+in an earlier draft, and it can be filled from your browser: **Import
+People…** reads the address and title of X profile pages in the history of
+Chrome and browsers built on it, which is where the names come from. It runs
+only when asked and nothing it reads leaves the Mac. Someone you have never
+visited or tagged has to be typed in full.
+
+Post is disabled for as long as the rules in force block x.com. When that
+stops being true, the window opens by itself with the drafts first. Post
+opens X's own compose page with the text filled in, in your browser. That
+address can't carry images, so a draft's images are put on the clipboard to
+be pasted into X's box. The draft stays until you mark it posted. Focus Guard
+never sends anything to X and holds no X credentials.
 
 **Apps.** An app on a block list is asked to quit when the session starts and
 each time it is opened. One opened during a session is forced if it doesn't
@@ -154,8 +170,9 @@ change, each session, and each page and app blocked.
 
 Debug builds listen for a distributed notification that stands in for macOS
 switching a Focus, so a session can be driven from a script. Release builds
-don't contain it. Setting `FOCUSGUARD_HOME` points a run at its own folder
-and keeps it apart from the installed copy.
+don't contain it. A debug build is a separate app to macOS, with its own
+bundle identifier, and refuses to start unless `FOCUSGUARD_HOME` points it at
+a folder of its own, so it can't touch the installed copy's rules or session.
 
     FOCUSGUARD_HOME=/tmp/fg build/Build/Products/Debug/FocusGuard.app/Contents/MacOS/FocusGuard &
     osascript -l JavaScript -e 'ObjC.import("Foundation");

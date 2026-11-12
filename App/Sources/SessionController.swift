@@ -45,6 +45,9 @@ final class SessionController: ObservableObject {
     private var epoch = 0
     private var calibration: (profile: String, at: Date)?
     private var pollInFlight = false
+    private var quietPolls = 0
+    private let startedAt = Date()
+    private static let startupGrace: TimeInterval = 20
 
     private init() {
         config = ConfigStore.load(from: Paths.config)
@@ -174,6 +177,19 @@ final class SessionController: ObservableObject {
             }
         }
         if profile == nil, saved.pollTrusted == false { return }
+        // One "nothing is on" isn't believed while a session is running. macOS
+        // gives that answer for a moment when it has lost track of the app's
+        // filter, as it does just after an install, and acting on it would
+        // start a cool-down nobody asked for. Two in a row are believed.
+        if profile == nil {
+            quietPolls += 1
+            if machine.state != .idle, quietPolls < 2 { return }
+            // Nor is it believed in the app's first seconds, when a session
+            // carried over from before is most exposed to a wrong answer.
+            if machine.state != .idle, Date().timeIntervalSince(startedAt) < Self.startupGrace { return }
+        } else {
+            quietPolls = 0
+        }
         if !machine.hasObserved || machine.observed != profile {
             Log.write("focus: poll -> \(profile ?? "none")")
         }
@@ -204,7 +220,9 @@ final class SessionController: ObservableObject {
         ticks += 1
         send(.tick)
         if case .coolingDown = state { now = Date() }
-        if ticks % 3 == 0 { poll() }
+        // Asked every second while a session runs, so that needing two
+        // answers doesn't make switching the Focus off feel slow.
+        if state != .idle || ticks % 3 == 0 { poll() }
         if ticks % 5 == 0 { net.verify() }
         if ticks % 300 == 0 { refreshShortcuts() }
     }
@@ -335,6 +353,8 @@ enum DebugHook {
                         controller.debugDragPanel(
                             by: NSSize(width: parts[0], height: parts[1]), onButton: command.hasPrefix("panel-press:"))
                     }
+                } else if command.hasPrefix("compose-") || command.hasPrefix("people-") {
+                    DraftsDebug.run(command)
                 } else if command == "drafts" {
                     AppDelegate.showDrafts(reviewing: false)
                 }

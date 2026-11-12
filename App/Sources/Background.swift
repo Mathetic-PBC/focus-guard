@@ -28,6 +28,23 @@ enum Background {
         Log.write("background: registered, status \(service.status.rawValue)")
     }
 
+    /// Registers again from scratch. For when macOS says the background item
+    /// is on but isn't running it, which happens if the registration came to
+    /// point at a copy of the app that no longer exists.
+    static func repair() {
+        Log.write("background: registered but not running; registering again")
+        try? service.unregister()
+        // macOS needs a moment between the two, or the second is refused.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            do {
+                try service.register()
+                Log.write("background: registered again, status \(service.status.rawValue)")
+            } catch {
+                Log.write("background: could not register again: \(error)")
+            }
+        }
+    }
+
     /// Passed to a copy that is started to carry on after the background copy
     /// is unregistered.
     static let takeoverFlag = "--takeover"

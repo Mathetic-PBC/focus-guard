@@ -34,7 +34,7 @@ targets:
         LSUIElement: true
         CFBundleURLTypes:
           - CFBundleURLName: com.mathetic.FocusGuard
-            CFBundleURLSchemes: [focusguard]
+            CFBundleURLSchemes: [$(FOCUSGUARD_URL_SCHEME)]
         LSApplicationCategoryType: public.app-category.productivity
         NSAppleEventsUsageDescription: Focus Guard reads which pages your browser is showing so it can replace the ones you blocked while a Focus is on.
         NSHumanReadableCopyright: Copyright © 2026 Mathetic PBC
@@ -53,3 +53,11 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         COMBINE_HIDPI_IMAGES: YES
         ENABLE_APP_INTENTS_METADATA_GENERATION: YES
+        FOCUSGUARD_URL_SCHEME: focusguard
+      configs:
+        # A debug build is a different app as far as macOS is concerned: its
+        # own identifier and its own link scheme. With the installed app's,
+        # macOS has started the build-folder copy in the installed one's place.
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: com.mathetic.FocusGuard.debug
+          FOCUSGUARD_URL_SCHEME: focusguard-debug
