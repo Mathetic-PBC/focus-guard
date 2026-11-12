@@ -10,7 +10,8 @@ switching that Focus off take two minutes instead of one click.
   switched on: by hand, on a schedule, or from another device.
 - **Switching the Focus off** starts a countdown. Blocking stays on until it
   finishes. A panel shows the time left and a **Stay Focused** button that
-  calls the whole thing off.
+  calls the whole thing off. The panel can be dragged out of the way and
+  comes up in the same place next time.
 - **Quitting** the app doesn't end a session. macOS restarts it, and a
   restart during a countdown begins the countdown again.
 

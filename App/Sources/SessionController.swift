@@ -298,6 +298,10 @@ final class SessionController: ObservableObject {
 }
 
 #if DEBUG
+extension SessionController {
+    func debugDragPanel(by offset: NSSize, onButton: Bool) { panel.debugDrag(by: offset, onButton: onButton) }
+}
+
 /// Stands in for macOS switching a Focus, so a build can be exercised without
 /// touching the real Focus settings. Compiled out of release builds, where it
 /// would be a way around the cool-down.
@@ -324,6 +328,13 @@ enum DebugHook {
                     AppDelegate.snapshotSettings(to: String(command.dropFirst(9)))
                 } else if command.hasPrefix("snapshot-drafts:") {
                     AppDelegate.snapshotDrafts(to: String(command.dropFirst(16)))
+                } else if command.hasPrefix("panel-drag:") || command.hasPrefix("panel-press:") {
+                    // "panel-drag:dx,dy" drags by the body. "panel-press:dx,dy" does the same on the button.
+                    let parts = command.split(separator: ":")[1].split(separator: ",").compactMap { Double($0) }
+                    if parts.count == 2 {
+                        controller.debugDragPanel(
+                            by: NSSize(width: parts[0], height: parts[1]), onButton: command.hasPrefix("panel-press:"))
+                    }
                 } else if command == "drafts" {
                     AppDelegate.showDrafts(reviewing: false)
                 }
