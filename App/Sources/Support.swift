@@ -17,6 +17,7 @@ enum Paths {
     static var state: URL { home.appendingPathComponent("state.json") }
     static var blockPage: URL { home.appendingPathComponent("blocked.html") }
     static var log: URL { home.appendingPathComponent("focusguard.log") }
+    static var drafts: URL { home.appendingPathComponent("drafts.json") }
 }
 
 /// A plain text log of what was seen and what was done about it. It is the

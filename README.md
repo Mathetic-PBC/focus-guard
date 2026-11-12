@@ -14,6 +14,10 @@ switching that Focus off take two minutes instead of one click.
 - **Quitting** the app doesn't end a session. macOS restarts it, and a
   restart during a countdown begins the countdown again.
 
+- **Posts to X can still be written.** While X is blocked, a drafts window
+  takes the text, with tags, and keeps it on the Mac. When the session ends
+  the drafts come up to be posted or deleted.
+
 The repository ships no rules. On first run the app asks you to make a
 profile, fill in its lists, and connect it to a Focus.
 
@@ -84,6 +88,15 @@ Chromium gives up when the tunnel drops. Apple's networking retries directly,
 unless the network service has direct fallback switched off, which is the one
 setting that needs a password and is changed only from the Setup pane.
 
+**Drafts for X.** The page a blocked X tab is sent to links to a drafts
+window, which is also in the menu bar menu. Drafts are a file on this Mac.
+Typing `@` offers the handles used in earlier drafts; X can't be asked who
+exists while it is blocked. Post is disabled for as long as the rules in force
+block x.com. When that stops being true, the window opens by itself with the
+drafts first. Post opens X's own compose page with the text filled in, in your
+browser, and the draft stays until you mark it posted. Focus Guard never sends
+anything to X and holds no X credentials.
+
 **Apps.** An app on a block list is asked to quit when the session starts and
 each time it is opened. One opened during a session is forced if it doesn't
 go. One that was already open is hidden instead, since it may be waiting on a
@@ -127,7 +140,7 @@ is saved to disk on every change.
 
 ## Files
 
-Rules, session state and a log live in
+Rules, session state, drafts and a log live in
 `~/Library/Application Support/FocusGuard/`. The log records each Focus
 change, each session, and each page and app blocked.
 

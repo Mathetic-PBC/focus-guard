@@ -74,6 +74,7 @@ enum Background {
 enum SingleInstance {
     static let yield = Notification.Name("com.mathetic.FocusGuard.yield")
     static let showSettings = Notification.Name("com.mathetic.FocusGuard.showSettings")
+    static let openLink = Notification.Name("com.mathetic.FocusGuard.openLink")
 
     private static var others: [NSRunningApplication] {
         guard let bundleID = Bundle.main.bundleIdentifier else { return [] }
@@ -91,13 +92,26 @@ enum SingleInstance {
             return true
         }
         if !others.isEmpty, !Background.isTakeover {
-            center.postNotificationName(showSettings, object: nil, userInfo: nil, deliverImmediately: true)
             return false
         }
         return true
     }
 
-    static func listen(onShowSettings: @escaping () -> Void) {
+    /// What a second copy does before it exits. macOS starts one whenever the
+    /// app is opened again or sent a link, because it doesn't count the copy
+    /// it keeps alive as the app already running. The second copy passes on
+    /// whatever it was started for.
+    static func handOver(links: [URL]) {
+        let center = DistributedNotificationCenter.default()
+        if links.isEmpty {
+            center.postNotificationName(showSettings, object: nil, userInfo: nil, deliverImmediately: true)
+        }
+        for link in links {
+            center.postNotificationName(openLink, object: link.absoluteString, userInfo: nil, deliverImmediately: true)
+        }
+    }
+
+    static func listen(onShowSettings: @escaping () -> Void, onLink: @escaping (URL) -> Void) {
         let center = DistributedNotificationCenter.default()
         if !Background.isAgentProcess {
             center.addObserver(forName: yield, object: nil, queue: .main) { _ in
@@ -106,5 +120,9 @@ enum SingleInstance {
             }
         }
         center.addObserver(forName: showSettings, object: nil, queue: .main) { _ in onShowSettings() }
+        center.addObserver(forName: openLink, object: nil, queue: .main) { note in
+            guard let text = note.object as? String, let url = URL(string: text) else { return }
+            onLink(url)
+        }
     }
 }

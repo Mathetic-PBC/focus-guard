@@ -13,6 +13,12 @@ DEST := /Applications/FocusGuard.app
 XCODEBUILD := xcodebuild -project FocusGuard.xcodeproj -scheme FocusGuard -derivedDataPath $(BUILD) \
 	CODE_SIGN_IDENTITY="$(IDENTITY)" -quiet
 
+# xcodebuild registers each product with macOS as an installed app. Left
+# registered, a build-folder copy can be the one macOS starts for a
+# focusguard:// link, instead of the copy in /Applications.
+LSREGISTER := /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+UNREGISTER = -$(LSREGISTER) -u "$(CURDIR)/$(APP)" "$(CURDIR)/$(DEBUG_APP)" 2>/dev/null
+
 .PHONY: project build debug test install uninstall clean
 
 project:
@@ -20,9 +26,11 @@ project:
 
 build: project
 	$(XCODEBUILD) -configuration Release build
+	$(UNREGISTER)
 
 debug: project
 	$(XCODEBUILD) -configuration Debug build
+	$(UNREGISTER)
 
 test:
 	cd Core && swift test

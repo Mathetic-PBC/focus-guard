@@ -33,10 +33,18 @@ final class NetBlocker {
     private var wanted: String?
 
     func listen() {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["FOCUSGUARD_NO_NET"] == "1" { return }
+        #endif
         proxy.start()
     }
 
     func start(policy: SitePolicy) {
+        #if DEBUG
+        // A test copy must not take the system proxy setting from the
+        // installed copy, which would then take it back, over and over.
+        if ProcessInfo.processInfo.environment["FOCUSGUARD_NO_NET"] == "1" { return }
+        #endif
         let hosts = policy.networkHosts
         guard !hosts.isEmpty else {
             stop()
@@ -56,6 +64,9 @@ final class NetBlocker {
     }
 
     func stop() {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["FOCUSGUARD_NO_NET"] == "1" { return }
+        #endif
         wanted = nil
         proxy.setRules(pac: ProxyAutoConfig.source(blocking: [], via: Self.address), hosts: [])
         SystemProxy.release(prefix: Self.base)
@@ -63,6 +74,9 @@ final class NetBlocker {
 
     /// Takes the setting down before the process ends, and waits for that.
     func stopBeforeExit() {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["FOCUSGUARD_NO_NET"] == "1" { return }
+        #endif
         wanted = nil
         SystemProxy.releaseNow(prefix: Self.base)
     }

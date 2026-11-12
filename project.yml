@@ -32,6 +32,9 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSUIElement: true
+        CFBundleURLTypes:
+          - CFBundleURLName: com.mathetic.FocusGuard
+            CFBundleURLSchemes: [focusguard]
         LSApplicationCategoryType: public.app-category.productivity
         NSAppleEventsUsageDescription: Focus Guard reads which pages your browser is showing so it can replace the ones you blocked while a Focus is on.
         NSHumanReadableCopyright: Copyright © 2026 Mathetic PBC

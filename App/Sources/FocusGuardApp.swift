@@ -18,18 +18,39 @@ struct FocusGuardApp: App {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private static var settingsWindow: NSWindow?
+    private static var draftsWindow: NSWindow?
     private var poweringOff = false
     private var terminateSource: DispatchSourceSignal?
+    private var lastLinkOpened: Date?
+    private var isPrimary = false
+    private var pendingLinks: [URL] = []
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        NSAppleEventManager.shared().setEventHandler(
+            self, andSelector: #selector(handleURL(_:reply:)),
+            forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // A run pointed at its own folder is a test. It stays out of the way
         // of the installed copy, and the installed copy out of its.
         if !Paths.isOverridden {
             guard SingleInstance.claim() else {
-                exit(0)
+                // Another copy is already doing the work. Give a link time to
+                // arrive, pass on what this copy was started for, and leave.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [self] in
+                    SingleInstance.handOver(links: pendingLinks)
+                    exit(0)
+                }
+                return
             }
-            SingleInstance.listen { AppDelegate.showSettings() }
+            SingleInstance.listen(
+                onShowSettings: { AppDelegate.showSettings() },
+                onLink: { [weak self] url in self?.open(url) })
         }
+        isPrimary = true
+        pendingLinks.forEach(open)
+        pendingLinks = []
 
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.willPowerOffNotification, object: nil, queue: .main
@@ -38,7 +59,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let session = SessionController.shared
+        // When a session that kept X out of reach ends, anything drafted in
+        // the meantime is put in front of the person to post or delete.
+        session.onXUnblocked = {
+            guard DraftsModel.shared.count > 0 else { return }
+            AppDelegate.showDrafts(reviewing: true)
+        }
         session.start()
+
+        // The page a blocked X tab is sent to links here, as focusguard://drafts.
+        // SwiftUI installs its own handler for links while the app starts and
+        // has no window to give this one to, so ours goes in after it.
+        DispatchQueue.main.async {
+            NSAppleEventManager.shared().setEventHandler(
+                self, andSelector: #selector(self.handleURL(_:reply:)),
+                forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
+        }
 
         // A kill request ends the process without the usual goodbye. The
         // system proxy setting must not outlive the listener it points at, so
@@ -75,8 +111,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc private func handleURL(_ event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
+        guard let text = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
+              let url = URL(string: text)
+        else { return }
+        open(url)
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        urls.forEach(open)
+    }
+
+    private func open(_ url: URL) {
+        guard url.scheme == "focusguard" else { return }
+        guard isPrimary else {
+            pendingLinks.append(url)
+            return
+        }
+        lastLinkOpened = Date()
+        if url.host == "drafts" { AppDelegate.showDrafts(reviewing: false) }
+    }
+
+    /// Opening the app again from Finder shows its settings. macOS sends the
+    /// same "reopen" when a link is what brought the app forward, so this
+    /// waits a moment to see whether a link follows.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
-        AppDelegate.showSettings()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            if let opened = self?.lastLinkOpened, Date().timeIntervalSince(opened) < 2 { return }
+            AppDelegate.showSettings()
+        }
         return false
     }
 
@@ -94,6 +157,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
+    }
+
+    static func showDrafts(reviewing: Bool) {
+        DraftsModel.shared.reviewing = reviewing
+        if draftsWindow == nil {
+            let root = DraftsView().environmentObject(SessionController.shared)
+            let window = NSWindow(contentViewController: NSHostingController(rootView: root))
+            window.title = "Drafts for X"
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            window.setContentSize(NSSize(width: 580, height: 620))
+            window.isReleasedWhenClosed = false
+            window.center()
+            window.setFrameAutosaveName("FocusGuardDrafts")
+            draftsWindow = window
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        draftsWindow?.makeKeyAndOrderFront(nil)
     }
 
     static func showSettings() {
@@ -130,6 +210,20 @@ extension AppDelegate {
             Log.write("debug: snapshot written")
         }
     }
+
+    static func snapshotDrafts(to path: String) {
+        if draftsWindow == nil || draftsWindow?.isVisible == false {
+            showDrafts(reviewing: DraftsModel.shared.reviewing)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            guard let view = draftsWindow?.contentView?.superview ?? draftsWindow?.contentView,
+                  let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds)
+            else { return }
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            try? bitmap.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+            Log.write("debug: drafts snapshot written")
+        }
+    }
 }
 #endif
 
@@ -156,6 +250,7 @@ struct MenuLabel: View {
 
 struct MenuContent: View {
     @ObservedObject private var session = SessionController.shared
+    @ObservedObject private var drafts = DraftsModel.shared
 
     var body: some View {
         switch session.state {
@@ -172,6 +267,9 @@ struct MenuContent: View {
             Button("Stay Focused") { session.cancelCooldown() }
         }
         Divider()
+        Button(drafts.count == 0 ? "Drafts for X…" : "Drafts for X… (\(drafts.count))") {
+            AppDelegate.showDrafts(reviewing: false)
+        }
         Button("Settings…") { AppDelegate.showSettings() }
         if !Background.isEnabled {
             Divider()

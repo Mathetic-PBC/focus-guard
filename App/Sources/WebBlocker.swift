@@ -136,12 +136,17 @@ enum BlockPage {
           h1 { font-size: 1.75rem; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 .5rem; text-wrap: balance; }
           p { color: var(--soft); margin: 0; text-wrap: pretty; }
           code { font: inherit; color: var(--ink); overflow-wrap: anywhere; }
+          #draft { margin-top: 1.25rem; }
+          a { color: #0a66d8; text-decoration: none; font-weight: 500; }
+          a:hover { text-decoration: underline; }
+          @media (prefers-color-scheme: dark) { a { color: #4aa3ff; } }
         </style>
         </head>
         <body>
         <main>
           <h1 id="title">This site is blocked</h1>
           <p>Your Focus is on. To open it, switch the Focus off and wait out the cool-down.</p>
+          <p id="draft" hidden><a href="focusguard://drafts">Write a draft to post later</a></p>
         </main>
         <script>
           const host = decodeURIComponent(location.hash.slice(1));
@@ -151,6 +156,7 @@ enum BlockPage {
             name.textContent = host;
             title.textContent = "";
             title.append(name, " is blocked");
+            if (/(^|\\.)(x|twitter)\\.com$/.test(host)) document.getElementById("draft").hidden = false;
           }
         </script>
         </body>

@@ -55,6 +55,16 @@ final class SessionController: ObservableObject {
 
     var isLocked: Bool { state != .idle }
 
+    /// True while the rules in force keep X out of reach. Drafts written in
+    /// that time can't be posted until this goes false.
+    var isXBlocked: Bool {
+        state.profileID.flatMap(config.profile)?.sitePolicy.blocks("https://x.com/home") ?? false
+    }
+
+    /// Called when a session that blocked X ends, or gives way to one that
+    /// doesn't.
+    var onXUnblocked: (() -> Void)?
+
     var activeProfile: Profile? { state.profileID.flatMap(config.profile) }
 
     var remaining: TimeInterval? {
@@ -207,8 +217,10 @@ final class SessionController: ObservableObject {
         }
         for effect in effects { apply(effect) }
         if machine.state != state {
+            let wasBlocked = isXBlocked
             state = machine.state
             now = Date()
+            if wasBlocked, !isXBlocked { onXUnblocked?() }
         }
         if machine.state != before || !effects.isEmpty || event != .tick { save() }
     }
@@ -310,6 +322,10 @@ enum DebugHook {
                     controller.requestEnd()
                 } else if command.hasPrefix("snapshot:") {
                     AppDelegate.snapshotSettings(to: String(command.dropFirst(9)))
+                } else if command.hasPrefix("snapshot-drafts:") {
+                    AppDelegate.snapshotDrafts(to: String(command.dropFirst(16)))
+                } else if command == "drafts" {
+                    AppDelegate.showDrafts(reviewing: false)
                 }
             }
         }
