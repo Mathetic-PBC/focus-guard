@@ -270,4 +270,51 @@ final class DraftTests: XCTestCase {
         XCTAssertEqual(people.map(\.handle), ["tylercowen", "karpathy"])
         XCTAssertEqual(people.map(\.visits), [20, 9])
     }
+
+    // MARK: Adding images in X
+
+    func testLocateOutputIsRead() {
+        XCTAssertEqual(
+            ComposeAttach.parseLocate("2102722175\t2102722176\tjs\t1\t0\n"),
+            ComposeAttach.Target(window: 2102722175, tab: 2102722176, canLook: true, boxFound: true, alreadyAttached: 0))
+        XCTAssertEqual(
+            ComposeAttach.parseLocate("7\t9\tnojs\t0\t0"),
+            ComposeAttach.Target(window: 7, tab: 9, canLook: false, boxFound: false, alreadyAttached: 0))
+        // No tab turned up, or the script said something unexpected.
+        XCTAssertNil(ComposeAttach.parseLocate(""))
+        XCTAssertNil(ComposeAttach.parseLocate("7\t9\tjs"))
+        XCTAssertNil(ComposeAttach.parseLocate("7\t9\tmaybe\t1\t0"))
+    }
+
+    func testPasteIsCountedAgainstWhatWasAlreadyThere() {
+        let empty = ComposeAttach.Target(window: 1, tab: 2, canLook: true, boxFound: true, alreadyAttached: 0)
+        XCTAssertEqual(ComposeAttach.parsePaste("2", target: empty), .attached(2))
+        XCTAssertEqual(ComposeAttach.parsePaste("0", target: empty), .attached(0))
+        let oneThere = ComposeAttach.Target(window: 1, tab: 2, canLook: true, boxFound: true, alreadyAttached: 1)
+        XCTAssertEqual(ComposeAttach.parsePaste("2\n", target: oneThere), .attached(1))
+        XCTAssertEqual(ComposeAttach.parsePaste("1", target: oneThere), .attached(0))
+    }
+
+    func testPasteThatCannotBeCheckedIsNotCalledAttached() {
+        let blind = ComposeAttach.Target(window: 1, tab: 2, canLook: false, boxFound: false, alreadyAttached: 0)
+        XCTAssertEqual(ComposeAttach.parsePaste("pasted", target: blind), .pasted)
+        // The page could be read but X's box wasn't recognised, so a count of
+        // nothing proves nothing.
+        let unrecognised = ComposeAttach.Target(window: 1, tab: 2, canLook: true, boxFound: false, alreadyAttached: 0)
+        XCTAssertEqual(ComposeAttach.parsePaste("0", target: unrecognised), .pasted)
+    }
+
+    func testScriptsNameTheTabAndNeverLookWhereTheyMayNot() {
+        let address = TweetText.composeURL(for: "it's \"quoted\" \\ done")!.absoluteString
+        let locate = ComposeAttach.locateScript(bundleID: "com.google.Chrome", address: address)
+        XCTAssertTrue(locate.contains("whose URL is \"\(address)\""))
+        // The address is percent-encoded, so nothing in it can end the string.
+        XCTAssertFalse(address.contains("\""))
+        let blind = ComposeAttach.Target(window: 11, tab: 22, canLook: false, boxFound: false, alreadyAttached: 0)
+        let paste = ComposeAttach.pasteScript(bundleID: "com.google.Chrome", target: blind, expecting: 1)
+        XCTAssertTrue(paste.contains("whose id is 11"))
+        XCTAssertTrue(paste.contains("whose id is 22"))
+        XCTAssertTrue(paste.contains("paste selection"))
+        XCTAssertFalse(paste.contains("javascript"))
+    }
 }

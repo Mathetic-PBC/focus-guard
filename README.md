@@ -110,9 +110,15 @@ visited or tagged has to be typed in full.
 Post is disabled for as long as the rules in force block x.com. When that
 stops being true, the window opens by itself with the drafts first. Post
 opens X's own compose page with the text filled in, in your browser. That
-address can't carry images, so a draft's images are put on the clipboard to
-be pasted into X's box. The draft stays until you mark it posted. Focus Guard
-never sends anything to X and holds no X credentials.
+address can't carry images, so a draft's images are put on the clipboard and,
+once X's box has loaded, the browser is told to paste them, as ⌘V would. That
+works in Chrome and browsers built on it. Where Chrome's View › Developer ›
+Allow JavaScript from Apple Events is on, Focus Guard also puts the caret in
+the box first and checks afterwards that the images are showing; where it is
+off, the paste is made unchecked. In other browsers the images wait on the
+clipboard for you to paste. The draft stays until you mark it posted. Focus
+Guard never presses Post, sends nothing to X itself, and holds no X
+credentials.
 
 **Apps.** An app on a block list is asked to quit when the session starts and
 each time it is opened. One opened during a session is forced if it doesn't

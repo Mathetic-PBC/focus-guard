@@ -36,7 +36,7 @@ targets:
           - CFBundleURLName: com.mathetic.FocusGuard
             CFBundleURLSchemes: [$(FOCUSGUARD_URL_SCHEME)]
         LSApplicationCategoryType: public.app-category.productivity
-        NSAppleEventsUsageDescription: Focus Guard reads which pages your browser is showing so it can replace the ones you blocked while a Focus is on.
+        NSAppleEventsUsageDescription: Focus Guard reads which pages your browser is showing so it can replace the ones you blocked while a Focus is on, and pastes a draft's images into X's post box when you post it.
         NSHumanReadableCopyright: Copyright © 2026 Mathetic PBC
     entitlements:
       path: App/FocusGuard.entitlements

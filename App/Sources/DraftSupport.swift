@@ -64,11 +64,18 @@ enum DraftMedia {
     /// what a browser's paste reads as attached files.
     @discardableResult
     static func copy(_ names: [String], to pasteboard: NSPasteboard) -> Bool {
-        let urls = names.map { url(for: $0) as NSURL }
+        let urls = names.map { url(for: $0) }
         guard !urls.isEmpty else { return false }
         pasteboard.clearContents()
-        return pasteboard.writeObjects(urls)
+        guard pasteboard.writeObjects(urls as [NSURL]) else { return false }
+        // Finder also writes the files as one list under an older name, and
+        // that list is what Chrome reads. Without it Chrome's paste carries
+        // the first file and drops the rest.
+        pasteboard.setPropertyList(urls.map(\.path), forType: fileList)
+        return true
     }
+
+    private static let fileList = NSPasteboard.PasteboardType("NSFilenamesPboardType")
 
     /// The image files on a pasteboard, and failing that an image copied as
     /// data, such as a screenshot. Text that came with an image wins: copying
@@ -85,6 +92,79 @@ enum DraftMedia {
             return ([], data)
         }
         return ([], nil)
+    }
+}
+
+/// Adds a draft's images to X's post box after the compose page is opened,
+/// by telling the browser to paste. See `ComposeAttach` for why and how.
+@MainActor
+final class ComposeAttacher {
+    enum State: Equatable {
+        case working
+        /// The page shows every image.
+        case attached
+        /// The page shows this many of them.
+        case partial(Int)
+        /// Pasted, in a browser that doesn't let the page be checked.
+        case pasted
+        /// Nothing was pasted, or it didn't take. The images are on the
+        /// clipboard for the person to paste.
+        case manual
+    }
+
+    // Its own thread: waiting for a page to load must not hold up the
+    // scripts that watch tabs during a session.
+    private let runner = ScriptRunner()
+
+    /// `clipboard` is the pasteboard's change count right after the images
+    /// were copied. If something else is copied while the page loads, pasting
+    /// would put that into the box, so nothing is pasted.
+    func attach(count: Int, to address: URL, clipboard: Int, update: @escaping (State) -> Void) {
+        guard let app = NSWorkspace.shared.urlForApplication(toOpen: address),
+              let bundleID = Bundle(url: app)?.bundleIdentifier,
+              Browsers.readable[bundleID] == .chromium
+        else {
+            Log.write("drafts: images left on the clipboard; this browser can't be told to paste")
+            return update(.manual)
+        }
+        update(.working)
+        let locate = ComposeAttach.locateScript(bundleID: bundleID, address: address.absoluteString)
+        runner.run(locate) { [runner] result in
+            guard case .success(let output) = result, let target = ComposeAttach.parseLocate(output) else {
+                if case .failure(let error) = result {
+                    Log.write("drafts: could not reach the compose page: \(error.code) \(error.message)")
+                } else {
+                    Log.write("drafts: the compose page didn't turn up; images left on the clipboard")
+                }
+                return update(.manual)
+            }
+            guard NSPasteboard.general.changeCount == clipboard else {
+                Log.write("drafts: the clipboard changed while X loaded; nothing pasted")
+                return update(.manual)
+            }
+            runner.run(ComposeAttach.pasteScript(bundleID: bundleID, target: target, expecting: count)) { result in
+                guard case .success(let output) = result else {
+                    if case .failure(let error) = result {
+                        Log.write("drafts: paste into X failed: \(error.code) \(error.message)")
+                    }
+                    return update(.manual)
+                }
+                switch ComposeAttach.parsePaste(output, target: target) {
+                case .attached(let added) where added >= count:
+                    Log.write("drafts: X shows \(added) image(s) added")
+                    update(.attached)
+                case .attached(0):
+                    Log.write("drafts: pasted, but X shows no image")
+                    update(.manual)
+                case .attached(let added):
+                    Log.write("drafts: X shows \(added) of \(count) image(s)")
+                    update(.partial(added))
+                case .pasted:
+                    Log.write("drafts: pasted \(count) image(s) into X, unchecked")
+                    update(.pasted)
+                }
+            }
+        }
     }
 }
 

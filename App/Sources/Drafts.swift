@@ -17,6 +17,9 @@ final class DraftsModel: ObservableObject {
     @Published var reviewing = false
     @Published private(set) var importing = false
     @Published private(set) var importResult: String?
+    /// How adding each posted draft's images to X's box is going or went.
+    @Published private(set) var attaching: [String: ComposeAttacher.State] = [:]
+    private let attacher = ComposeAttacher()
 
     private init() {
         book = DraftStore.load(from: Paths.drafts)
@@ -43,15 +46,29 @@ final class DraftsModel: ObservableObject {
     }
 
     /// Opens X's compose page with the draft's text. The address can't carry
-    /// images, so those are put on the clipboard to be pasted into the box.
-    /// The draft is kept, marked as opened, until the person says it went out.
+    /// images, so those are put on the clipboard and pasted into the box once
+    /// it is on screen, or left there to be pasted by hand where the browser
+    /// can't be told to. The draft is kept, marked as opened, until the
+    /// person says it went out.
     func post(_ draft: TweetDraft) {
         guard let url = TweetText.composeURL(for: draft.text) else { return }
-        if !draft.images.isEmpty { DraftMedia.copy(draft.images, to: .general) }
+        let copied = !draft.images.isEmpty && DraftMedia.copy(draft.images, to: .general)
+        let clipboard = NSPasteboard.general.changeCount
         NSWorkspace.shared.open(url)
         book.markOpened(draft.id, now: Date())
         persist()
         Log.write("drafts: opened compose page for a draft with \(draft.images.count) image(s)")
+        guard copied else { return }
+        let id = draft.id
+        attacher.attach(count: draft.images.count, to: url, clipboard: clipboard) { [weak self] state in
+            self?.attaching[id] = state
+        }
+    }
+
+    /// For pasting by hand.
+    func copyImages(of draft: TweetDraft) {
+        DraftMedia.copy(draft.images, to: .general)
+        attaching[draft.id] = .manual
     }
 
     func keep(_ id: String) {
@@ -181,7 +198,7 @@ struct DraftsView: View {
     private var bannerDetail: String {
         if blocked { return "Write here. Drafts are saved on this Mac and can be posted when the session ends." }
         if model.count == 0 { return "Drafts you write here stay on this Mac until you post them." }
-        return "Post opens X with the text filled in. Nothing is sent until you press Post there."
+        return "Post opens X with the text and images filled in. Nothing is sent until you press Post there."
     }
 
     // MARK: Composer
@@ -473,13 +490,10 @@ private struct DraftRow: View {
                 }
             }
             if draft.openedAt != nil, !draft.images.isEmpty {
-                Label(
-                    draft.images.count == 1
-                        ? "The image is on the clipboard. Click in X's post box and press ⌘V."
-                        : "The \(draft.images.count) images are on the clipboard. Click in X's post box and press ⌘V.",
-                    systemImage: "doc.on.clipboard")
+                Label(imageNote.text, systemImage: imageNote.symbol)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             HStack(spacing: 8) {
@@ -489,7 +503,7 @@ private struct DraftRow: View {
                 Spacer()
                 if draft.openedAt != nil {
                     if !draft.images.isEmpty {
-                        Button("Copy Images Again") { DraftMedia.copy(draft.images, to: .general) }
+                        Button(draft.images.count == 1 ? "Copy Image Again" : "Copy Images Again") { model.copyImages(of: draft) }
                     }
                     Button("Keep as Draft") { model.keep(draft.id) }
                     Button("Posted, Remove") { model.delete(draft.id) }
@@ -501,7 +515,7 @@ private struct DraftRow: View {
                     Button("Post…") { model.post(draft) }
                         .buttonStyle(.borderedProminent)
                         .disabled(blocked)
-                        .help(blocked ? "X is blocked until the session ends" : "Open X with this text filled in")
+                        .help(blocked ? "X is blocked until the session ends" : "Open X with this draft filled in")
                 }
             }
             .controlSize(.small)
@@ -509,6 +523,29 @@ private struct DraftRow: View {
         .padding(12)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(isBeingEdited ? Color.accentColor : .clear, lineWidth: 1.5))
+    }
+
+    /// Where the draft's images are, once X has been opened for it.
+    private var imageNote: (text: String, symbol: String) {
+        let one = draft.images.count == 1
+        let byHand = one
+            ? "The image is on the clipboard. Click in X's post box and press ⌘V."
+            : "The \(draft.images.count) images are on the clipboard. Click in X's post box and press ⌘V."
+        switch model.attaching[draft.id] {
+        case .working:
+            return (one ? "Adding the image to the post in X…" : "Adding the \(draft.images.count) images to the post in X…", "arrow.up.doc")
+        case .attached:
+            return (one ? "The image was added to the post in X." : "All \(draft.images.count) images were added to the post in X.", "checkmark.circle")
+        case .partial(let added):
+            return ("X took \(added) of the \(draft.images.count) images. Add the rest in X.", "exclamationmark.triangle")
+        case .pasted:
+            return (one
+                ? "The image was pasted into X's post box. If it isn't there, click in the box and press ⌘V."
+                : "The \(draft.images.count) images were pasted into X's post box. If they aren't there, click in the box and press ⌘V.",
+                "doc.on.clipboard")
+        case .manual, nil:
+            return (byHand, "doc.on.clipboard")
+        }
     }
 
     private var status: String {
